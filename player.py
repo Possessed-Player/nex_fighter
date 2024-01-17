@@ -1,9 +1,10 @@
 import cv2 as cv
 import numpy as np
-from cvbot.io import read_img, save_img
+from cvbot.io import read_img
 from cvbot.images import Image
 from cvbot.match import mse
-from cvbot.capture import get_region
+from cvbot.capture import get_region, get_pixel
+from cvbot.colors import clr_find
 
 
 SDIMS = [read_img("src/{}.png".format(i), "grey") for i in range(10)]
@@ -116,21 +117,90 @@ def read_vitals(region):
     img = process_n(get_region(region))
     return read_n(split_n(img))
 
-if __name__ == "__main__":
-    # -------- Save digits ------------------------
-    #img = read_img("test.png")
-    #bimg = process_n(img)
-    #digits = split_n(bimg)
-    #print(len(digits))
-    #for i, d in enumerate(digits):
-    #    save_img(d, "digit{}.png".format(i))
-    # ---------------------------------------------
-    pryr = (525, 123, 20, 8)
-    hp = (524, 89, 22, 8)
-    eng = (534, 155, 22, 8)
+HP_REG   = (528, 89, 22, 8)
+PRYR_REG = (528, 123, 22, 8)
 
-    while True:
-        print("   HP: {1}, Prayer: {0}, Energy: {2}    ".
-              format(read_vitals(pryr),
-                     read_vitals(hp),
-                     read_vitals(eng)), end="\r")
+def hp():
+    """
+    None -> int
+    Return current HP value
+    """
+    return read_vitals(HP_REG)
+
+def prayer():
+    """
+    None -> int
+    Return current prayer value
+    """
+    return read_vitals(PRYR_REG)
+
+INVEN_REG  = (569, 243, 158, 250)
+SARA_CLR   = (76, 200, 202)
+REST_CLR   = (105, 61, 171)      # Blue, Green, Red(BGR)
+EMPT_CLR   = (118, 116, 116)
+PFM_PRYR   = (612, 388)
+EE_PRYR    = (724, 388)
+PRYRON_CLR = (110, 180, 206)
+
+def find_pots(pot=""):
+    """
+    str -> list((int, int))
+    Given name/key of pot to find
+    return locations of the pots on screen
+    """
+    if pot == "s":
+        var = 50
+        mnht = 0
+        clr = SARA_CLR
+    elif pot == "r":
+        var = 60
+        mnht = 0
+        clr = REST_CLR
+    elif pot == "":
+        var = 50
+        mnht = 22
+        clr = EMPT_CLR
+    else:
+        print("Potion name/key not found!")
+        return [] 
+
+    invim = get_region(INVEN_REG)
+    locs = clr_find(invim ,clr, variation=var, 
+                    min_wd=15,
+                    min_ht=mnht,
+                    relative=INVEN_REG) 
+    # --------- Test Code -------            # Find locations of blocks of
+    #gmim = get_region((0, 0, 800, 600))      # given color
+    ## Taking an image of the whole game      # 20 is the color variation
+    ## To properly see if the location is     # meaning color can vary
+    ## correct                                # by 20 or less in value
+    #nim = gmim.draw_rects(locs, rects=True)  # in all blue, green and red
+    #print(len(locs))                         # channels
+    #nim.show()
+    # ---------------------------
+    locs = list(sorted(locs, key=lambda x: x[2] * x[3]))
+    # Smallest object first, meaning potions with the lowest doses
+    # is first in the list
+
+    return  [(loc[0] + (loc[2] // 2), loc[1] + (loc[3] // 2)) for
+             loc in locs]
+
+def prayer_on():
+    """
+    None -> list(bool, bool) 
+    Return list of 2 booleans
+    the first one is True if pfm prayer is on
+    the second is True if ee prayer is on 
+    False otherwise
+    ASSUMPTION: PRAYER TAB IS OPEN
+    """
+    clrs = get_pixel(PFM_PRYR), get_pixel(EE_PRYR)
+
+    res = []
+    for clr in clrs:
+        res.append(tuple(clr[:3]) == PRYRON_CLR)
+
+    return res 
+
+if __name__ == "__main__":
+    find_pots("s")

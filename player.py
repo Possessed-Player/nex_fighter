@@ -170,13 +170,13 @@ def find_pots(pot=""):
                     min_ht=mnht,
                     relative=INVEN_REG) 
     # --------- Test Code -------            # Find locations of blocks of
-    #gmim = get_region((0, 0, 800, 600))      # given color
-    ## Taking an image of the whole game      # 20 is the color variation
-    ## To properly see if the location is     # meaning color can vary
-    ## correct                                # by 20 or less in value
+    gmim = get_region((0, 0, 800, 600))      # given color
+    # Taking an image of the whole game      # 20 is the color variation
+    # To properly see if the location is     # meaning color can vary
+    # correct                                # by 20 or less in value
     #nim = gmim.draw_rects(locs, rects=True)  # in all blue, green and red
     #print(len(locs))                         # channels
-    #nim.show()
+    gmim.show()
     # ---------------------------
     locs = list(sorted(locs, key=lambda x: x[2] * x[3]))
     # Smallest object first, meaning potions with the lowest doses

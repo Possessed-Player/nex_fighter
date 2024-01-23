@@ -1,4 +1,5 @@
 import player
+import world
 from time import sleep
 from cvbot.keyboard import press
 from cvbot.mouse import click, move
@@ -83,9 +84,71 @@ def pryr_switcher():
     # Switch to default tab before returning
     switch_tab("inven")
 
-if __name__ == "__main__":
+def drop_item(pos, long):
+    """
+    Point, bool -> None
+    Drop item at the position 'pos'
+    on screen, if long is True
+    assume the item right-click menu
+    to be long
+    """
+    # Anything higher than 455 is considered last row
+    # 17 at the last row for long menu, 33 for short menu
+    if pos[1] > 455:
+        dpos = pos[0], pos[1] + (17 if long else 23)
+    else:
+        if long and pos[1] > 420:
+            dpos = pos[0], pos[1] + (57 if long else 45)
+        else:
+            dpos = pos[0], pos[1] + (75 if long else 45)
+
+    click(pos, btn="right")
+    sleep(0.1)
+    click(dpos)
+
+def drop_empty_pots(n):
+    """
+    int -> int
+    Given number of empty pots to drop
+    drop that number if possible and
+    return the actual number of dropped pots
+    """
+    acn = 0
+
+    pots = player.find_pots("")
+
+    for pot in pots:
+        if n == 0:
+            break
+        acn += 1
+        drop_item(pot, long=False)
+        n -= 1
+        sleep(0.5)
+
+    return acn
+
+CLCT_REG = 264, 197, 10, 10
+
+def collect_items():
+    """
+    None -> None
+    Collect all items under character
+    """
     while True:
-        pryr_handler()
-        sleep(5)
-        pryr_switcher()
-        sleep(1)
+        for x in range(CLCT_REG[2]):
+            for y in range(CLCT_REG[3]):
+                pos = x + CLCT_REG[0], y + CLCT_REG[1]
+                move(pos)
+                sleep(0.1)
+
+                if world.is_item():
+                    click(pos)
+                    sleep(0.5)
+
+                continue
+        else:
+            break 
+
+
+if __name__ == "__main__":
+    collect_items()

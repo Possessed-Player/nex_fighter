@@ -1,206 +1,340 @@
+from cvbot.images import Image
+from cvbot.io import read_img
+from cvbot.match import mse
+from cvbot.capture import get_pixel
+from cvbot.mouse import click
+from cvbot.keyboard import press
+from cvbot.nums import nread, init_reader
+from time import sleep
 import cv2 as cv
 import numpy as np
-from cvbot.io import read_img
-from cvbot.images import Image
-from cvbot.match import mse
-from cvbot.capture import get_region, get_pixel
-from cvbot.colors import clr_find
 
 
-SDIMS = [read_img("src/{}.png".format(i), "grey") for i in range(10)]
+inv_reg = (565, 240, 170, 255)
+DIGITS = [read_img("src/{}.png".format(i), "grey") for i in range(10)]
+sara_clr  = (80, 200, 200, 255), (100, 210, 210, 255)
+rest_clr  = (100, 50, 170, 255), (120, 75,  195, 255)
+empty_clr = (90,  90,  90, 255), (120, 120, 120, 255)
+drop_c = 0
+AMP = 620, 380
+RNP = {1:(726, 386),
+       2:(650, 460)}
 
-def process_n(im):
-    """
-    Image -> Image
-    Given an image of a full-number return a black and white version
-    with the black columns at the start and end trimmed
-    """
-    for x in range(15):
-        if im.img[0, x][0] < 50:
-            clr = im.img[0, x]      # Scan the first row of the image
-                                # Once we hit a pixel with pixel value
-                                # save it as the unique color
-    bim = cv.inRange(im.img, clr, clr)
+def select_tab(tab):
+    if tab == "inven":
+        p = 650, 220
+    elif tab == "mgk":
+        p = 750, 220
+    elif tab == "qst":
+        p = 615, 215
+    elif tab == "stng":
+        p = 680, 515
+
+    click(p)
+
+def read_dgts(dgts):
+    results = []
+
+    for dgt in dgts:
+        if dgt is None:
+            results.append(None)
+            continue
+        ndgt = Image(dgt)
+        for i, DGT in enumerate(DIGITS):
+            ndgt.img = cv.resize(dgt, DGT.img.shape[::-1])
+            res = mse(ndgt, DGT)
+
+            if res < 1500:
+                results.append(i)
+                break
+        else:
+            results.append(None)
+    
+    return results
+
+def read_num(im):
+    _, w = im.shape
+
+    prta = None
+    prtb = None
+    prtc = None
+
+    if w >= 7:
+        bi = 0
+        for i in range(w):
+            col = im[:, i]
+            sm = np.sum(col)
+
+            if sm == 0:
+                if prta is None:
+                    #print("1", i)
+                    prta = im[:, :i]
+                elif prtb is None and bi != 0:
+                    prtb = im[:, bi:i]
+            elif not (prta is None) and prtb is None and bi == 0:
+                #print("2", i)
+                bi = i
+            elif not (prtb is None):
+                #print("3", i)
+                prtc = im[:, i:]
+                break
+        else:
+            prtb = im[:, bi:]
+    else:
+        prta = im
+                
+    nmbr = read_dgts((prta, prtb, prtc))
+    #print(nmbr)
+
+    if nmbr[0] is None:
+        nmbr = None
+    elif nmbr[1] is None:
+        nmbr = nmbr[0]
+    elif nmbr[2] is None:
+        nmbr = nmbr[:2]
+        nmbr = int("".join(str(i) for i in nmbr))
+    else:
+        nmbr = int("".join(str(i) for i in nmbr))
+
+    return nmbr
+
+def process_num(im):
+    for x in range(10):
+        if im[0, x][0] < 50:
+            clr = im[0, x]
+
+    im = cv.inRange(im, clr, clr)
 
     while True:
-        psd = False                     # This part will trim/remove
-                                        # columns at the start or end
-        if not (255 in bim[:, 0]):      # that are full black columns
-            bim = bim[:, 1:]
+        psd = False 
+
+        if not (255 in im[:, 0]):
+            im = im[:, 1:]
         else:
             psd = True
-
-        if not (255 in bim[:, -1]):
-            bim = bim[:, :-1]
+        
+        if not (255 in im[:, -1]):
+            im = im[:, :-1]
         else:
             if psd:
                 break
 
-    return Image(bim)
+    return im 
 
-def split_n(im):
+def read_vital(img, reg):
+    im = img.crop(reg).img
+    ds = process_num(im)
+
+    return read_num(ds)
+
+def hp(img):
     """
-    Image -> list(Image)
-    *** Initial version, will change soon ***
-    Given black and white image of a full-number
-    return each digit as its own image in a list
+    Image -> int[0-99]
+    Return current player hp
     """
-    w, _ = im.size
+    hprg = (531, 89, 17, 8)
 
-    prta, prtb, prtc = None, None, None # First, second and third digit
+    return read_vital(img, hprg)
 
-    if w >= 7:
-        fxb = None              # First x(column) of part (b) or second digit
-
-        for x in range(w):
-            col = im.img[:, x]  # Columns from left to right of the image
-            sm = np.sum(col)    # Sum of the pixel values of the column
-
-            if sm == 0:         # Black column
-                if prta is None:
-                    prta = im.img.copy()[:, :x]
-                elif prtb is None and not (fxb is None):
-                    prtb = im.img.copy()[:, fxb:x]
-            elif not (prta is None) and prtb is None and fxb is None:
-                fxb = x
-            elif not (prtb is None):
-                prtc = im.img.copy()[:, x:]
-                break
-        else:
-            if not (fxb is None):
-                prtb = im.img.copy()[:, fxb:]
-    else:
-        prta = im.img
-
-    return [Image(prta),] + ([] if prtb is None else [Image(prtb),] + 
-                      ([] if prtc is None else [Image(prtc),]))
-
-def combine(loi):
+def prayer(img):
     """
-    list(int) -> int
-    Combine digits in the integer list
-    into one full-number
+    Image -> int[0-99]
+    Return current player prayer 
     """
-    fn = ""
+    pyrg = (531, 123, 17, 8)
 
-    for i in loi:
-        fn += str(i)
+    return read_vital(img, pyrg)
 
-    return int(fn)
-
-def read_n(dims):
+def prayer_on(prop=1):
     """
-    list(Image) -> int
-    Read each digit image and return the full-number
-    as an integer
+    None -> list(bool, bool)
+    Return a list of two booleans
+    First is for anti magic prayer
+    Second is for ranged attack prayer
+    Each boolean represent the state of
+    the prayer
+    False -> Prayer is off
+    True  -> Prayer is on
     """
-    results = []
+    global AMP, RNP
 
-    for dim in dims:
-        best = None
-        for i, SDIM in enumerate(SDIMS):
-            ndim = dim.resize((SDIM.size))  # Must be the same size before
-            df = mse(ndim, SDIM)            # doing mean squared difference
-            if best is None or df < best[1]:# Which is just a pixel for pixel
-                best = i, df                # comparison
-
-        results.append(best[0])
-
-    return combine(results)
-
-def read_vitals(region):
-    """
-    Rect -> int
-    Return the integer displayed
-    in the given screen region
-    """
-    img = process_n(get_region(region))
-    return read_n(split_n(img))
-
-HP_REG   = (528, 89, 22, 8)
-PRYR_REG = (528, 123, 22, 8)
-
-def hp():
-    """
-    None -> int
-    Return current HP value
-    """
-    return read_vitals(HP_REG)
-
-def prayer():
-    """
-    None -> int
-    Return current prayer value
-    """
-    return read_vitals(PRYR_REG)
-
-INVEN_REG  = (569, 243, 158, 250)
-SARA_CLR   = (76, 200, 202)
-REST_CLR   = (105, 61, 171)      # Blue, Green, Red(BGR)
-EMPT_CLR   = (118, 116, 116)
-PFM_PRYR   = (612, 388)
-EE_PRYR    = (724, 388)
-PRYRON_CLR = (110, 180, 206)
-
-def find_pots(pot=""):
-    """
-    str -> list((int, int))
-    Given name/key of pot to find
-    return locations of the pots on screen
-    """
-    if pot == "s":
-        var = 50
-        mnht = 0
-        clr = SARA_CLR
-    elif pot == "r":
-        var = 60
-        mnht = 0
-        clr = REST_CLR
-    elif pot == "":
-        var = 50
-        mnht = 22
-        clr = EMPT_CLR
-    else:
-        print("Potion name/key not found!")
-        return [] 
-
-    invim = get_region(INVEN_REG)
-    locs = clr_find(invim ,clr, variation=var, 
-                    min_wd=15,
-                    min_ht=mnht,
-                    relative=INVEN_REG) 
-    # --------- Test Code -------            # Find locations of blocks of
-    gmim = get_region((0, 0, 800, 600))      # given color
-    # Taking an image of the whole game      # 20 is the color variation
-    # To properly see if the location is     # meaning color can vary
-    # correct                                # by 20 or less in value
-    #nim = gmim.draw_rects(locs, rects=True)  # in all blue, green and red
-    #print(len(locs))                         # channels
-    gmim.show()
-    # ---------------------------
-    locs = list(sorted(locs, key=lambda x: x[2] * x[3]))
-    # Smallest object first, meaning potions with the lowest doses
-    # is first in the list
-
-    return  [(loc[0] + (loc[2] // 2), loc[1] + (loc[3] // 2)) for
-             loc in locs]
-
-def prayer_on():
-    """
-    None -> list(bool, bool) 
-    Return list of 2 booleans
-    the first one is True if pfm prayer is on
-    the second is True if ee prayer is on 
-    False otherwise
-    ASSUMPTION: PRAYER TAB IS OPEN
-    """
-    clrs = get_pixel(PFM_PRYR), get_pixel(EE_PRYR)
+    press("f3")
+    sleep(0.1)
+    bpos = RNP[prop]
+    aclr, bclr = get_pixel(AMP), get_pixel(bpos)
+    rdcs = aclr[2], bclr[2]
 
     res = []
-    for clr in clrs:
-        res.append(tuple(clr[:3]) == PRYRON_CLR)
+    for rdc in rdcs:
+        res.append(rdc > 140)     
 
     return res 
 
+def sara_pots(img):
+    """
+    img -> int[0-14], Point
+    Return number of saradomin brew pots in inventory
+    and one of the pots location on screen
+    """
+    global inv_reg, sara_clr
+
+    invim = img.crop(inv_reg)
+    dst = cv.inRange(invim.img, sara_clr[0], sara_clr[1])
+    blr = cv.GaussianBlur(dst, (9, 9), 3)
+
+    cnts = cv.findContours(blr, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
+    pnts = []
+    for cnt in cnts:
+        x, y, w, h = cv.boundingRect(cnt)
+        x += 12 + inv_reg[0]
+        y += 5 + inv_reg[1]
+        pnts.append(((x, y), w * h))
+        #img = cv.circle(invim.img, (x, y), 3, (255, 0, 0), 3)
+
+    #cv.imshow("test", img)
+    #cv.waitKey(0)
+
+    if len(pnts):
+        pnts.sort(key=lambda x: x[1])
+        return len(pnts), pnts[0][0]
+    else:
+        return 0, None
+
+def rest_pots(img):
+    """
+    Image -> int[0-14], Point
+    Return number of super restore pots in inventory
+    and one of the pots location on screen
+    """
+    global inv_reg, rest_clr
+
+    invim = img.crop(inv_reg)
+    dst = cv.inRange(invim.img, rest_clr[0], rest_clr[1])
+    blr = cv.GaussianBlur(dst, (9, 9), 3)
+
+    cnts = cv.findContours(blr, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
+    pnts = []
+    for cnt in cnts:
+        x, y, w, h = cv.boundingRect(cnt)
+        x += 12 + inv_reg[0]
+        y += 6 + inv_reg[1]
+        pnts.append(((x, y), w * h))
+        #img = cv.circle(invim.img, (x, y), 3, (255, 0, 0), 3)
+
+    #cv.imshow("test2", img)
+    #cv.waitKey(0)
+
+    if len(pnts):
+        pnts.sort(key=lambda x: x[1])
+        return len(pnts), pnts[0][0]
+    else:
+        return 0, None
+
+def empty_slots(img):
+    """
+    Image -> int[0-28]
+    Return the number of empty slots
+    in inventory
+    """
+    global inv_reg
+
+    invim = img.crop(inv_reg)
+    total = 0
+
+    for i in range(28):
+        pos = ind_to_pos(i)
+        cpos = pos[1] - inv_reg[1], pos[0] - inv_reg[0]
+        clr = invim.img[cpos]
+        b, g, r = clr[:3]
+        res = (50 < b < 62) and (59 < g < 71) and (68 < r < 81)
+        if res: total += 1
+
+    return total
+
+def empty_pots(img):
+    """
+    Image -> int[0-14], Point
+    Return number of empty pots in inventory
+    and one of the pots location on screen
+    """
+    global inv_reg, empty_clr 
+
+    invim = img.crop(inv_reg)
+    dst = cv.inRange(invim.img, empty_clr[0], empty_clr[1])
+    blr = cv.GaussianBlur(dst, (9, 9), 3)
+
+    cnts = cv.findContours(blr, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)[0]
+    pnts = []
+    for cnt in cnts:
+        x, y, w, h = cv.boundingRect(cnt)
+        area = w * h
+        if area < 645:
+            continue
+        #print(area)
+        x += 12 + inv_reg[0]
+        y += 15 + inv_reg[1]
+        pnts.append((x, y))
+        #img = cv.circle(invim.img, (x, y), 3, (255, 0, 0), 3)
+
+    #cv.imshow("test3", img)
+    #cv.waitKey(0)
+
+    if len(pnts):
+        return len(pnts), pnts
+    else:
+        return 0, None
+
+def drop_item_pos(pos, long=False):
+    """
+    Point, bool -> None
+    Drop an item in the inventory with
+    screen location "pos"
+    Add extra y distance for long menus
+    if 'long' is True
+    """
+    global drop_c 
+    drop_c += 1
+    dpos = pos[0], pos[1] + ((50 if not long else 80) if pos[1] < 450 else 
+                             (25 if not long else (15 if pos[1] != 450 else 45)))
+
+    click(pos, "right")
+    sleep(0.2)
+    click(dpos)
+    sleep(1)
+
+def ind_to_pos(i):
+    """
+    int -> Point
+    Convert index number of an item
+    to position of that item
+    """
+    x, y, _, _ = 588, 265, 147, 246
+    dfx, dfy = 43, 37
+    col, row = i % 4, i // 4
+    pos = x + (dfx * col), y + (dfy * row) 
+    return pos
+
+def drop_item(i, long=False):
+    """
+    int, bool -> None
+    Drop item with index 'i' starting
+    from top left
+    Add extra y distance for long menus
+    if 'long' is True
+    """
+    pos = ind_to_pos(i)
+    drop_item_pos(pos, long)
+
+
 if __name__ == "__main__":
-    find_pots("s")
+    from cvbot.capture import screenshot
+    print(" ")
+    while True:
+        img = screenshot()
+        try:
+            p = hp(img) 
+            print(p, " ", end="\r")
+        except Exception as e:
+            #print(e)
+            pass
+        #break

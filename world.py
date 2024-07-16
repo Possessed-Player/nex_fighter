@@ -1,50 +1,98 @@
-from cvbot.colors import count_clr
+from cvbot.mouse import click_region, click, move
+from cvbot.keyboard import hold_for
 from cvbot.capture import get_region
-from cvbot.nums import nread, init_reader
-from cvbot.yolo.ai import init_model, detect
+import cv2 as cv
+import numpy as np
+from time import sleep
 
 
-ITEM_DESC_REG = (47, 39, 103, 16)    # Second arguement is color of number
-ITEM_DESC_CLR = (64, 144, 255)
-GM_REG        = (12, 34, 512, 335)
-BOSS_HP_REG = (231, 80, 91, 8)
+def reset_comp():
+    """
+    None -> None
+    Click on the compass to reset it
+    to the north direction
+    """
+    reg = (558, 40, 23, 23)
+    click_region(reg)
 
-init_model("models/nex_tiny.onnx", "nex")
-init_reader("src/", (255, 255, 255)) # Path to digits images
-                                     # Second argument is thresholding color
+def max_y():
+    """
+    None -> None
+    Maximize the camera y value making it 
+    look from uptop
+    """
+    hold_for("up", 2)
 
 def is_item():
     """
     None -> bool
-    Return True if current hovered on
-    position have an item on it
+    Return True if the current object 
+    being hovered over by mouse is an item
     """
-    img = get_region(ITEM_DESC_REG)
-    cnt = count_clr(img, ITEM_DESC_CLR)
-    return cnt > 100
+    reg = 50, 40, 90, 10
+    clr = (45, 110, 200, 255), (55, 120, 210, 255)
+    itim = get_region(reg)
+    count = cv.inRange(itim.img, *clr).sum() // 255
 
-def nex_pos():
-    """
-    None -> None | Point
-    Find nex in 'GM_REG' on screen and return
-    its position if found, None if not found
-    """
-    img = get_region(GM_REG)
-    res = detect(img, 0.5)
-    if res:
-        pos, _, _ = res[0]
-        img.img[pos[1] + ((pos[3] - pos[1]) // 2), :] = np.array((0, 0, 255, 255), dtype=img.img.dtype)
-        img.img[:, pos[0] + ((pos[2] - pos[0]) // 2)] = np.array((0, 0, 255, 255), dtype=img.img.dtype)
-        print(res)
-        imshow("test", img.img)
-        waitKey(1)
+    return count > 120
 
-def nex_hp():
-    img = get_region(BOSS_HP_REG)
-    return nread(img)
+def pick_items(dc):
+    """
+    int -> None
+    ASSUMPTION: camera is at maximum and y and compass is facing north
+    Checks if there are items beneath player model
+    and picks them all
+    """
+    #pos = 270, 202
+    #pos = 270, 204
+
+    # 274 -> 266, 206 -> 198
+    reset_comp()
+
+    while dc > 0: 
+        fpx, fpy = 267, 199
+        fnd = False
+        for x in range(5):
+            for y in range(7):
+                pos = fpx + x, fpy + y
+                move(pos)
+                sleep(0.2)
+                if is_item():
+                    fnd = True
+                
+                if fnd:
+                    break
+            if fnd:
+                break
+        else:
+            return dc
+
+        click(pos)
+        sleep(1)
+        dc -= 1
+
+    return dc
+
+def full_reset():
+    """
+    None -> None
+    Reset camera position
+    to a unique setting(maximum y tilt, and facing north)
+    """
+    reset_comp()
+    max_y()
+    
+def collect_items(dc):
+    """
+    int -> int 
+    Pick items from the ground
+    right beneath player model    
+    """
+    #full_reset()
+    return pick_items(dc)
 
 if __name__ == "__main__":
-    from cv2 import imshow, waitKey
-    import numpy as np
+    from cvbot.mouse import ms
     while True:
-        nex_pos()
+        print(ms.position, " ", end="\r")
+    #collect_items(4)
